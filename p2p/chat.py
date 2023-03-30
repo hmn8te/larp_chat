@@ -3,6 +3,7 @@ from sx127x import MODE, BANDWIDTH, SPREADING_FACTOR, CODING_RATE
 from Crypto.Cipher import AES
 import hashlib
 import time
+import getpass
 
 # LoRa radio configuration
 frequency = 433E6  # 433 MHz frequency band
@@ -12,9 +13,6 @@ spreading_factor = SPREADING_FACTOR.SF7
 coding_rate = CODING_RATE.CR_4_5
 preamble_length = 8
 implicit_header_mode = False
-
-# Encryption key (16, 24, or 32 bytes long)
-encryption_key = b'secretkey1234567'
 
 # Configure send and receive time windows (in seconds)
 send_window = 5
@@ -29,7 +27,7 @@ lora = SX127x(frequency=frequency, tx_power_level=tx_power_level, signal_bandwid
 lora.start()
 
 # Callback function to handle incoming messages
-def on_receive(lora, payload):
+def on_receive(lora, payload, packet):
     # Decrypt the incoming message
     cipher = AES.new(encryption_key, AES.MODE_EAX, nonce=payload[:16])
     decrypted_message = cipher.decrypt(payload[16:])
@@ -38,13 +36,20 @@ def on_receive(lora, payload):
 # Set callback function for incoming messages
 lora.set_receive_handler(on_receive)
 
+# Read the encryption key securely
+while True:
+    encryption_key = getpass.getpass("Enter encryption key (16, 24, or 32 bytes long): ")
+    if len(encryption_key) in [16, 24, 32]:
+        break
+    print("Invalid key length, please try again")
+
 # Main loop to send chat messages during the send time window
 while True:
     start_time = time.time()
     end_time = start_time + send_window
     while time.time() < end_time:
         # Encrypt the chat message
-        cipher = AES.new(encryption_key, AES.MODE_EAX)
+        cipher = AES.new(encryption_key.encode(), AES.MODE_EAX)
         ciphertext, tag = cipher.encrypt_and_digest(bytes(input("Type a message to send: "), 'utf-8'))
         nonce = cipher.nonce
         encrypted_message = nonce + ciphertext
