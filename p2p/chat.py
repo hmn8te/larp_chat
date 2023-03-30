@@ -1,5 +1,6 @@
 from sx127x import SX127x
 from sx127x import MODE, BANDWIDTH, SPREADING_FACTOR, CODING_RATE
+import time
 
 # LoRa radio configuration
 frequency = 433E6  # 433 MHz frequency band
@@ -9,6 +10,10 @@ spreading_factor = SPREADING_FACTOR.SF7
 coding_rate = CODING_RATE.CR_4_5
 preamble_length = 8
 implicit_header_mode = False
+
+# Configure send and receive time windows (in seconds)
+send_window = 5
+receive_window = 10
 
 # Initialize LoRa radio
 lora = SX127x(frequency=frequency, tx_power_level=tx_power_level, signal_bandwidth=signal_bandwidth,
@@ -25,8 +30,12 @@ def on_receive(lora, payload):
 # Set callback function for incoming messages
 lora.set_receive_handler(on_receive)
 
-# Main loop to send chat messages
+# Main loop to send chat messages during the send time window
 while True:
-    message = input("Type a message to send: ")
-    lora.send(bytes(message, 'utf-8'))
-    print(f"Sent message: {message}")
+    start_time = time.time()
+    end_time = start_time + send_window
+    while time.time() < end_time:
+        message = input("Type a message to send: ")
+        lora.send(bytes(message, 'utf-8'))
+        print(f"Sent message: {message}")
+    time.sleep(receive_window)
