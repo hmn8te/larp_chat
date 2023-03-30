@@ -1,98 +1,97 @@
 import time
-import board
-import busio
-from digitalio import DigitalInOut
-import adafruit_ssd1306
-import adafruit_rfm9x
-import binascii
+from sx127x import SX127x
+from sx127x import ModemConfig
+from sx127x import RegConfig
 
-# Define the frequency and CS pin for each device
-devices = {
-    "device1": {
-        "frequency": 915.0,
-        "cs_pin": DigitalInOut(board.D5),
-        "send_window": (0, 5),
-        "receive_window": (5, 10)
-    },
-    "device2": {
-        "frequency": 915.0,
-        "cs_pin": DigitalInOut(board.D6),
-        "send_window": (10, 15),
-        "receive_window": (15, 20)
-    },
-    # Add more devices here...
-}
 
-# Define the TDMA slots
-tdma_slots = 20
+class LoRaDevice:
+    def __init__(self, device_id, frequency, bandwidth, spreading_factor, coding_rate,
+                 output_power, send_window, receive_window, encryption_key):
+        self.device_id = device_id
+        self.frequency = frequency
+        self.bandwidth = bandwidth
+        self.spreading_factor = spreading_factor
+        self.coding_rate = coding_rate
+        self.output_power = output_power
+        self.send_window = send_window
+        self.receive_window = receive_window
+        self.encryption_key = encryption_key
+        
+        # Calculate TDMA parameters
+        self.slot_length = receive_window / NUM_DEVICES
+        self.my_slot = (self.device_id - 1) * self.slot_length
+        self.slot_start_time = 0
 
-# Initialize the RFM9x devices and create a dictionary of radios
-radios = {}
-for device_name, device_config in devices.items():
-    spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
-    radios[device_name] = adafruit_rfm9x.RFM9x(spi, device_config["cs_pin"], device_config["frequency"])
+        # Initialize LoRa radio
+        self.lora = SX127x(
+            name=f'LoRa-{self.device_id}',
+            parameters={
+                'frequency': self.frequency,
+                'bandwidth': self.bandwidth,
+                'spreading_factor': self.spreading_factor,
+                'coding_rate': self.coding_rate,
+                'output_power': self.output_power,
+            },
+            on_recv=lambda lora, payload: self.receive(payload),
+        )
 
-# Define the encryption key
-encryption_key = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F"
+        # Configure modem
+        modem_config = ModemConfig.Bw125Cr45Sf128
+        self.lora.set_modem_config(modem_config)
+        self.lora.set_pa_config(pa_select=1, max_power=self.output_power, output_power=self.output_power)
 
-# Initialize the display
-i2c = busio.I2C(board.SCL, board.SDA)
-display = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c, addr=0x3C)
+        # Configure registers
+        self.lora.set_reg(RegConfig.LNA_GAIN, 0b00100000)
+        self.lora.set_reg(RegConfig.PA_DAC, 0b00001111)
 
-def encrypt_data(data, key):
-    """
-    Encrypts the given data using the provided key.
-    """
-    cipher = AES.new(key, AES.MODE_EAX)
-    nonce = cipher.nonce
-    ciphertext, tag = cipher.encrypt_and_digest(data)
-    return nonce + ciphertext + tag
+        # Start listening for messages
+        self.start_receive()
 
-def decrypt_data(data, key):
-    """
-    Decrypts the given data using the provided key.
-    """
-    nonce = data[:16]
-    ciphertext = data[16:-16]
-    tag = data[-16:]
-    cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
-    plaintext = cipher.decrypt_and_verify(ciphertext, tag)
-    return plaintext
+    def start_receive(self):
+        """
+        Set up receive window and start listening for messages.
+        """
+        self.lora.start_implicit_rx(self.slot_start_time + self.my_slot, self.receive_window)
 
-def send_message(device_name, message):
-    """
-    Sends the given message from the specified device.
-    """
-    radio = radios[device_name]
-    send_start, send_end = devices[device_name]["send_window"]
-    receive_start, receive_end = devices[device_name]["receive_window"]
-    
-    # Wait until the start of the send window
-    while time.monotonic() < send_start:
-        pass
-    
-    # Encrypt the message
-    encrypted_message = encrypt_data(message, encryption_key)
-    
-    # Send the message
-    radio.send(encrypted_message)
-    
-    # Wait until the end of the send window
-    while time.monotonic() < send_end:
-        pass
-    
-    # Listen for messages
-    radio.listen()
-    
-    # Wait until the start of the receive window
-    while time.monotonic() < receive_start:
-        pass
-    
-    # Receive messages
-    messages = []
-    while time.monotonic() < receive_end:
-        if radio.available():
-            received_message = radio.receive()
-            # Decrypt the message
-            decrypted_message = decrypt_data(received_message, encryption_key)
-           
+    def send(self, message):
+        """
+        Send a message during the device's assigned send window.
+        """
+        if time.monotonic() >= (self.slot_start_time + self.my_slot + self.send_window):
+            self.lora.send(message, encryption_key=self.encryption_key)
+
+    def receive(self, payload):
+        """
+        Handle a received message.
+        """
+        print(f"Received by device {self.device_id}: {payload.decode()}")
+
+
+# Constants
+FREQUENCY = 915000000
+BANDWIDTH = 125000
+SPREADING_FACTOR = 7
+CODING_RATE = 5
+OUTPUT_POWER = 14
+SEND_WINDOW = 1.0  # seconds
+RECEIVE_WINDOW = 3.0  # seconds
+NUM_DEVICES = 100
+
+# Encryption key
+encryption_key = b'supersecretkey'
+
+# Create LoRa devices
+devices = []
+for device_id in range(1, NUM_DEVICES + 1):
+    device = LoRaDevice(device_id, FREQUENCY, BANDWIDTH, SPREADING_FACTOR, CODING_RATE,
+                        OUTPUT_POWER, SEND_WINDOW, RECEIVE_WINDOW, encryption_key)
+    devices.append(device)
+
+# Run TDMA scheme
+SLOT_LENGTH = RECEIVE_WINDOW / NUM_DEVICES
+SLOT_START_TIME = 0
+while True:
+    current_time = time.monotonic()
+    for device in devices:
+        if (current_time >= (SLOT_START_TIME + device.my_slot)) and \
+                (current_time < (SLOT_START_TIME
