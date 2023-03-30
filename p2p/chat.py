@@ -74,9 +74,9 @@ def main():
             break
         print("Invalid key length, please try again")
 
-    # Initialize chat apps
-    app1 = ChatApp(frequency=frequency, tx_power_level=tx_power_level, signal_bandwidth=signal_bandwidth,
-                   spreading_factor=spreading_factor, coding_rate=coding_rate, preamble_length=preamble_length,
-                   implicit_header_mode=implicit_header_mode, encryption_key=encryption_key)
-    app2 = ChatApp(frequency=frequency, tx_power_level=tx_power_level, signal_bandwidth=signal_bandwidth,
-                   spreading_factor=spreading_factor, coding_rate=coding_rate
+    # Initialize chat apps for up to 100 devices
+    chat_apps = []
+    for i in range(1, 101):
+        chat_app = ChatApp(frequency=frequency, tx_power_level=tx_power_level, signal_bandwidth=signal_bandwidth,
+                           spreading_factor=spreading_factor, coding_rate=coding_rate, preamble_length=preamble_length,
+                           implicit_header_mode=implicit_header_mode, encryption_key=encryption_key)
